@@ -1,0 +1,632 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#eef0ec" />
+    <meta name="description" content="A private operator console for sending text and audio signals to a Discord webhook." />
+    <title>NEURO-LINK // Webhook Dispatcher</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@500;600;700;800&family=Share+Tech+Mono&display=swap" rel="stylesheet" />
+    <style>
+      :root {
+        --paper: #071014;
+        --paper-deep: #0b171b;
+        --surface: rgba(10, 22, 27, .86);
+        --surface-solid: #0b171b;
+        --ink: #d9fbf7;
+        --muted: #7ba4a2;
+        --line: rgba(0, 240, 255, .16);
+        --line-strong: rgba(0, 240, 255, .36);
+        --accent: #00f0ff;
+        --accent-soft: rgba(0, 240, 255, .14);
+        --teal: #00ff88;
+        --teal-soft: rgba(0, 255, 136, .14);
+        --yellow: #ffd166;
+        --shadow: 0 18px 44px rgba(0, 240, 255, .12);
+        --mono: "Share Tech Mono", monospace;
+        --sans: "Share Tech Mono", monospace;
+        --display: "Orbitron", sans-serif;
+        --radius: 6px;
+        --grid-opacity: .055;
+        --orb-opacity: .18;
+        --motion: 260ms;
+      }
+      html[data-theme="maximal"] {
+        --paper: #090014;
+        --paper-deep: #130022;
+        --surface: rgba(14, 4, 28, .87);
+        --surface-solid: #10051e;
+        --ink: #f8ebff;
+        --muted: #a993b5;
+        --line: rgba(255, 0, 255, .25);
+        --line-strong: rgba(255, 0, 255, .52);
+        --accent: #ff00ff;
+        --accent-soft: rgba(255, 0, 255, .17);
+        --teal: #00f0ff;
+        --teal-soft: rgba(0, 240, 255, .15);
+        --yellow: #ffd166;
+        --shadow: 0 24px 65px rgba(255, 0, 255, .22);
+        --grid-opacity: .12;
+        --orb-opacity: .32;
+        --motion: 180ms;
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        min-height: 100dvh;
+        color: var(--ink);
+        background: var(--paper);
+        font-family: var(--sans);
+        transition: background var(--motion) ease, color var(--motion) ease;
+      }
+      body::before {
+        content: "";
+        position: fixed;
+        inset: 0;
+        z-index: -2;
+        opacity: var(--grid-opacity);
+        background-image: linear-gradient(var(--ink) 1px, transparent 1px), linear-gradient(90deg, var(--ink) 1px, transparent 1px);
+        background-size: 43px 43px;
+        pointer-events: none;
+      }
+      body::after {
+        content: "";
+        position: fixed;
+        inset: 0;
+        z-index: 10;
+        pointer-events: none;
+        opacity: .025;
+        background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 180 180' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.8' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='.65'/%3E%3C/svg%3E");
+        mix-blend-mode: screen;
+      }
+      button, input, textarea { font: inherit; }
+      button { cursor: pointer; }
+      button:focus-visible, input:focus-visible, textarea:focus-visible, summary:focus-visible {
+        outline: 3px solid color-mix(in srgb, var(--teal) 45%, transparent);
+        outline-offset: 3px;
+      }
+      .scene { position: fixed; inset: 0; z-index: -1; overflow: hidden; pointer-events: none; }
+      #three-canvas { position: absolute; inset: 0; width: 100%; height: 100%; opacity: var(--orb-opacity); transition: opacity 500ms ease; }
+      .shell { width: min(1440px, 100%); margin: 0 auto; padding: 0 30px 52px; }
+      .topbar {
+        min-height: 78px; display: flex; align-items: center; justify-content: space-between;
+        gap: 20px; border-bottom: 1px solid var(--line); position: relative; z-index: 2;
+      }
+      .brand { display: flex; align-items: center; gap: 13px; text-decoration: none; color: var(--ink); }
+      .brand-mark {
+        width: 31px; height: 31px; border: 1.5px solid var(--ink); display: grid; place-items: center;
+        position: relative; transform: rotate(45deg); transition: transform 450ms cubic-bezier(.2,.8,.2,1);
+      }
+      .brand:hover .brand-mark { transform: rotate(135deg); }
+      .brand-mark::before { content: ""; width: 9px; height: 9px; background: var(--accent); border-radius: 50%; }
+      .brand-name { font-size: 13px; line-height: 1.1; font-weight: 800; letter-spacing: .16em; }
+      .brand-sub { display: block; color: var(--muted); font: 9px var(--mono); letter-spacing: .1em; margin-top: 4px; }
+      .top-actions { display: flex; align-items: center; gap: 17px; }
+      .system-state { display: flex; align-items: center; gap: 8px; font: 10px var(--mono); color: var(--muted); letter-spacing: .08em; text-transform: uppercase; }
+      .pulse { width: 7px; height: 7px; border-radius: 50%; background: var(--teal); box-shadow: 0 0 0 4px var(--teal-soft); }
+      .theme-picker { display: flex; gap: 3px; padding: 3px; border: 1px solid var(--line); background: color-mix(in srgb, var(--surface-solid) 78%, transparent); border-radius: 8px; }
+      .theme-btn {
+        border: 0; border-radius: 5px; padding: 7px 10px; background: transparent; color: var(--muted);
+        font: 10px var(--mono); letter-spacing: .08em; transition: all var(--motion) ease;
+      }
+      .theme-btn[aria-pressed="true"] { background: var(--ink); color: var(--paper); }
+      .intro { padding: 57px 0 38px; display: flex; justify-content: space-between; align-items: end; gap: 30px; }
+      .eyebrow { font: 10px var(--mono); color: var(--accent); letter-spacing: .2em; text-transform: uppercase; margin: 0 0 15px; }
+      h1 { font-family: var(--display); font-size: clamp(2.2rem, 5.5vw, 5.5rem); line-height: .92; letter-spacing: -.075em; max-width: 790px; margin: 0; font-weight: 800; text-shadow: 0 0 30px color-mix(in srgb, var(--accent) 18%, transparent); }
+      .intro-note { max-width: 256px; margin: 0 0 4px; color: var(--muted); font-size: 12px; line-height: 1.65; }
+      .intro-note strong { color: var(--ink); font-weight: 700; }
+      .workspace { display: grid; grid-template-columns: minmax(0, 1.42fr) minmax(300px, .76fr); gap: 18px; align-items: start; }
+      .panel {
+        background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); box-shadow: var(--shadow);
+        backdrop-filter: blur(15px); -webkit-backdrop-filter: blur(15px);
+      }
+      .panel-head { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 19px 21px; border-bottom: 1px solid var(--line); }
+      .panel-title { margin: 0; font-size: 11px; letter-spacing: .12em; text-transform: uppercase; font-weight: 800; }
+      .panel-index { color: var(--muted); font: 10px var(--mono); }
+      .composer { overflow: hidden; }
+      .composer-body { padding: 22px 21px 21px; }
+      .field-label { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin: 0 0 8px; font: 10px var(--mono); letter-spacing: .1em; color: var(--muted); text-transform: uppercase; }
+      .field-label em { color: var(--accent); font-style: normal; letter-spacing: 0; text-transform: none; }
+      .url-row { display: flex; gap: 8px; }
+      .control, textarea {
+        width: 100%; border: 1px solid var(--line); border-radius: 8px; background: color-mix(in srgb, var(--surface-solid) 74%, transparent);
+        color: var(--ink); padding: 12px 13px; font-size: 12px; transition: border var(--motion) ease, box-shadow var(--motion) ease, background var(--motion) ease;
+      }
+      .control::placeholder, textarea::placeholder { color: color-mix(in srgb, var(--muted) 72%, transparent); }
+      .control:focus, textarea:focus { border-color: var(--teal); box-shadow: 0 0 0 3px var(--teal-soft); outline: 0; }
+      .control[type="url"] { font-family: var(--mono); font-size: 11px; }
+      .compact-btn, .ghost-btn, .send-btn, .record-btn {
+        display: inline-flex; align-items: center; justify-content: center; gap: 8px; border-radius: 8px; border: 1px solid var(--line-strong);
+        transition: transform var(--motion) ease, background var(--motion) ease, color var(--motion) ease, border var(--motion) ease;
+      }
+      .compact-btn { background: var(--ink); color: var(--paper); padding: 0 15px; font: 10px var(--mono); white-space: nowrap; }
+      .compact-btn:hover, .send-btn:hover, .record-btn:hover { transform: translateY(-2px); }
+      .url-hint { display: flex; align-items: center; gap: 7px; min-height: 20px; margin: 7px 0 22px; color: var(--muted); font-size: 10px; }
+      .url-hint.valid { color: var(--teal); }
+      .url-hint.invalid { color: var(--accent); }
+      .url-hint .mini-dot { width: 5px; height: 5px; border-radius: 50%; background: currentColor; }
+      textarea { resize: vertical; min-height: 159px; line-height: 1.6; display: block; }
+      .composer-meta { display: flex; justify-content: flex-end; color: var(--muted); font: 10px var(--mono); margin-top: 7px; }
+      .drop-zone {
+        min-height: 124px; margin-top: 22px; border: 1px dashed var(--line-strong); border-radius: 10px; display: flex;
+        align-items: center; justify-content: center; gap: 14px; padding: 20px; background: color-mix(in srgb, var(--teal-soft) 23%, transparent);
+        transition: border var(--motion) ease, background var(--motion) ease, transform var(--motion) ease;
+      }
+      .drop-zone.dragging { border-color: var(--teal); background: var(--teal-soft); transform: scale(1.008); }
+      .drop-icon { width: 35px; height: 35px; border-radius: 9px; border: 1px solid var(--line); color: var(--teal); display: grid; place-items: center; flex: 0 0 auto; }
+      .drop-copy { min-width: 0; }
+      .drop-copy strong { display: block; font-size: 12px; margin-bottom: 4px; }
+      .drop-copy span { color: var(--muted); font-size: 10px; line-height: 1.5; }
+      .file-button { color: var(--teal); background: none; border: 0; text-decoration: underline; text-underline-offset: 3px; padding: 0; font-size: 10px; }
+      .attachments { display: grid; gap: 7px; margin-top: 9px; }
+      .attachment {
+        display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 10px; padding: 9px 10px; border: 1px solid var(--line); background: var(--surface-solid); border-radius: 8px;
+        animation: slide-in 300ms both;
+      }
+      .attachment-preview { margin: -1px 0 0 39px; grid-column: 2 / -1; max-width: min(300px, calc(100% - 49px)); max-height: 94px; border-radius: 6px; object-fit: cover; }
+      .attachment-preview.audio { width: min(300px, 100%); height: 29px; }
+      .attachment-preview.video { width: min(300px, 100%); background: var(--ink); }
+      .file-kind { width: 29px; height: 29px; background: var(--accent-soft); color: var(--accent); border-radius: 6px; display: grid; place-items: center; flex: 0 0 auto; }
+      .file-info { min-width: 0; flex: 1; }
+      .file-name { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11px; font-weight: 700; }
+      .file-size { display: block; color: var(--muted); font: 9px var(--mono); margin-top: 3px; }
+      .remove-file { border: 0; background: transparent; color: var(--muted); width: 28px; height: 28px; border-radius: 50%; }
+      .remove-file:hover { color: var(--accent); background: var(--accent-soft); }
+      .recorder { margin-top: 25px; padding-top: 22px; border-top: 1px solid var(--line); }
+      .recorder-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 11px; }
+      .recorder-title { font-size: 12px; font-weight: 800; }
+      .mic-status { display: flex; align-items: center; gap: 6px; color: var(--muted); font: 9px var(--mono); text-transform: uppercase; letter-spacing: .1em; }
+      .mic-status .pulse { background: var(--muted); box-shadow: none; width: 5px; height: 5px; }
+      .mic-status.recording { color: var(--accent); }
+      .mic-status.recording .pulse { background: var(--accent); box-shadow: 0 0 0 4px var(--accent-soft); animation: blink 1s infinite; }
+      .recorder-row { display: flex; align-items: center; gap: 14px; padding: 12px; border-radius: 9px; border: 1px solid var(--line); background: color-mix(in srgb, var(--surface-solid) 58%, transparent); }
+      .record-btn { width: 40px; height: 40px; border-radius: 50%; color: var(--paper); background: var(--accent); border: 0; flex: 0 0 auto; }
+      .record-btn.recording { background: var(--ink); }
+      .timer { font: 23px var(--mono); letter-spacing: -.07em; min-width: 68px; }
+      .waveform { height: 28px; flex: 1; display: flex; align-items: center; gap: 2px; overflow: hidden; opacity: .65; }
+      .waveform i { width: 3px; min-width: 3px; border-radius: 3px; background: var(--teal); height: 8px; }
+      .waveform i:nth-child(3n) { height: 21px; }.waveform i:nth-child(4n) { height: 13px; }.waveform i:nth-child(7n) { height: 25px; }
+      .recording .waveform i { animation: wave 850ms ease-in-out infinite alternate; }
+      .recording .waveform i:nth-child(2n) { animation-delay: -320ms; }.recording .waveform i:nth-child(3n) { animation-delay: -580ms; }
+      audio { width: 100%; height: 32px; margin-top: 10px; accent-color: var(--teal); }
+      .send-bar { display: flex; justify-content: space-between; align-items: center; gap: 16px; margin-top: 24px; }
+      .send-note { color: var(--muted); font-size: 10px; line-height: 1.4; }
+      .send-btn { padding: 13px 18px; border: 0; background: var(--accent); color: #fff8f3; font-size: 11px; font-weight: 800; letter-spacing: .05em; min-width: 145px; }
+      .send-btn:disabled { cursor: not-allowed; opacity: .58; transform: none; }
+      .send-btn svg { transition: transform var(--motion) ease; }.send-btn:hover svg { transform: translateX(3px); }
+      .side-stack { display: grid; gap: 18px; }
+      .side-panel { padding: 20px; }
+      .side-panel .panel-head { padding: 0 0 17px; margin-bottom: 17px; }
+      .readout { display: grid; grid-template-columns: 1fr 1fr; gap: 1px; background: var(--line); border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+      .readout-item { padding: 14px 12px; background: color-mix(in srgb, var(--surface-solid) 81%, transparent); }
+      .readout-label { display: block; font: 9px var(--mono); color: var(--muted); text-transform: uppercase; letter-spacing: .1em; margin-bottom: 7px; }
+      .readout-value { display: block; font-size: 15px; font-weight: 800; letter-spacing: -.04em; }
+      .readout-value.teal { color: var(--teal); }
+      .endpoint-card { margin-top: 14px; padding: 12px; border-radius: 8px; border: 1px solid var(--line); }
+      .endpoint-card p { margin: 0; color: var(--muted); font-size: 10px; line-height: 1.55; }
+      .endpoint-card code { display: inline-block; color: var(--teal); font: 10px var(--mono); max-width: 100%; overflow: hidden; text-overflow: ellipsis; vertical-align: bottom; }
+      .log-panel { overflow: hidden; }
+      .log-list { padding: 3px 20px 11px; max-height: 310px; overflow: auto; }
+      .log-empty { color: var(--muted); text-align: center; font-size: 11px; padding: 25px 5px; }
+      .log-entry { display: grid; grid-template-columns: 8px 1fr auto; gap: 10px; align-items: start; padding: 13px 0; border-bottom: 1px solid var(--line); animation: slide-in 300ms both; }
+      .log-entry:last-child { border-bottom: 0; }
+      .log-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--muted); margin-top: 4px; }
+      .log-dot.sent { background: var(--teal); }.log-dot.failed { background: var(--accent); }.log-dot.pending { background: var(--yellow); animation: blink 1s infinite; }
+      .log-main strong { display: block; font-size: 11px; font-weight: 700; }
+      .log-main span { display: block; color: var(--muted); font: 9px var(--mono); margin-top: 4px; }
+      .log-status { font: 9px var(--mono); text-transform: uppercase; color: var(--muted); }
+      .log-status.sent { color: var(--teal); }.log-status.failed { color: var(--accent); }.log-status.pending { color: #aa790e; }
+      details { border-top: 1px solid var(--line); }
+      summary { list-style: none; cursor: pointer; padding: 17px 20px; display: flex; align-items: center; justify-content: space-between; gap: 15px; font-size: 11px; font-weight: 800; }
+      summary::-webkit-details-marker { display: none; }
+      summary::after { content: "+"; font: 17px var(--mono); font-weight: 400; color: var(--muted); }
+      details[open] summary::after { content: "−"; }
+      .troubleshoot { padding: 0 20px 19px; color: var(--muted); font-size: 10px; line-height: 1.65; }
+      .troubleshoot p { margin: 0 0 10px; }.troubleshoot p:last-child { margin-bottom: 0; }
+      .troubleshoot strong { color: var(--ink); }
+      .footer { display: flex; justify-content: space-between; gap: 18px; margin-top: 24px; color: var(--muted); font: 9px var(--mono); letter-spacing: .04em; }
+      .footer span:last-child { text-align: right; }
+      .toast-region { position: fixed; right: 22px; bottom: 22px; z-index: 20; display: grid; gap: 8px; width: min(360px, calc(100vw - 44px)); }
+      .toast { display: flex; gap: 10px; align-items: flex-start; padding: 13px 14px; border-radius: 9px; border: 1px solid var(--line-strong); background: var(--surface-solid); box-shadow: var(--shadow); animation: toast-in 350ms both; font-size: 11px; line-height: 1.45; }
+      .toast b { display: block; font-size: 10px; text-transform: uppercase; letter-spacing: .08em; margin-bottom: 3px; }.toast p { margin: 0; color: var(--muted); }
+      .toast-mark { width: 7px; height: 7px; border-radius: 50%; background: var(--teal); margin-top: 4px; flex: 0 0 auto; }.toast.error .toast-mark { background: var(--accent); }
+      .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0; }
+      @keyframes slide-in { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
+      @keyframes toast-in { from { opacity: 0; transform: translateX(18px); } to { opacity: 1; transform: translateX(0); } }
+      @keyframes blink { 50% { opacity: .35; } }
+      @keyframes wave { from { transform: scaleY(.62); } to { transform: scaleY(1.15); } }
+      @media (max-width: 900px) {
+        .shell { padding-inline: 20px; }.workspace { grid-template-columns: 1fr; }.side-stack { grid-template-columns: 1fr 1fr; align-items: start; }
+      }
+      @media (max-width: 650px) {
+        .topbar { min-height: 70px; }.system-state { display: none; }.intro { display: block; padding: 39px 0 28px; }.intro-note { margin-top: 20px; max-width: 360px; }
+        .shell { padding-inline: 15px 15px; }.panel-head, .side-panel, .composer-body { padding-left: 16px; padding-right: 16px; }.side-stack { grid-template-columns: 1fr; gap: 15px; }
+        .url-row { flex-direction: column; }.compact-btn { min-height: 40px; }.drop-zone { align-items: flex-start; }.send-bar { align-items: stretch; flex-direction: column; }.send-btn { width: 100%; }.footer { display: block; line-height: 1.7; }.footer span:last-child { text-align: left; margin-top: 5px; display: block; }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        *, *::before, *::after { animation-duration: .001ms !important; animation-iteration-count: 1 !important; transition-duration: .001ms !important; }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="scene" aria-hidden="true"><canvas id="three-canvas"></canvas></div>
+    <div class="shell">
+      <header class="topbar">
+        <a href="#" class="brand" data-testid="link-brand" aria-label="NEURO-LINK home">
+          <span class="brand-mark"></span>
+          <span><span class="brand-name">NEURO-LINK</span><span class="brand-sub">// WEBHOOK DISPATCHER</span></span>
+        </a>
+        <div class="top-actions">
+          <div class="system-state"><span class="pulse"></span><span>client-side / ready</span></div>
+          <div class="theme-picker" aria-label="Visual theme">
+            <button class="theme-btn" type="button" data-theme-choice="minimal" aria-pressed="true" data-testid="button-theme-minimal">MINIMAL</button>
+            <button class="theme-btn" type="button" data-theme-choice="maximal" aria-pressed="false" data-testid="button-theme-maximal">MAXIMAL</button>
+          </div>
+        </div>
+      </header>
+
+      <main>
+        <section class="intro">
+          <div>
+            <p class="eyebrow">Private operator console / 01</p>
+            <h1>Send the signal.<br /><span style="color:var(--accent)">Keep the trace.</span></h1>
+          </div>
+          <p class="intro-note"><strong>One channel. Any payload.</strong><br />Compose a message, attach a file, or open a live microphone line. The browser talks directly to Discord; nothing is routed through a third party.</p>
+        </section>
+
+        <section class="workspace" aria-label="Webhook dispatcher workspace">
+          <article class="panel composer">
+            <div class="panel-head"><h2 class="panel-title">Dispatch payload</h2><span class="panel-index">A / 03</span></div>
+            <div class="composer-body">
+              <label class="field-label" for="webhook-url">Destination webhook <em>required</em></label>
+              <div class="url-row">
+                <input class="control" id="webhook-url" type="url" autocomplete="off" spellcheck="false" placeholder="https://discord.com/api/webhooks/..." data-testid="input-webhook-url" />
+                <button class="compact-btn" id="test-endpoint" type="button" data-testid="button-test-endpoint">Test endpoint</button>
+              </div>
+              <div class="url-hint" id="url-hint" aria-live="polite"><span class="mini-dot"></span><span>Webhook URL is stored locally in this browser.</span></div>
+
+              <label class="field-label" for="message">Message <em>optional with attachment</em></label>
+              <textarea id="message" maxlength="2000" placeholder="Write a signal for the channel…" data-testid="input-message"></textarea>
+              <div class="composer-meta"><span id="char-count">0 / 2,000</span></div>
+
+              <div class="drop-zone" id="drop-zone" data-testid="drop-zone">
+                <div class="drop-icon" aria-hidden="true">
+                  <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M12 16V4m0 0L7.5 8.5M12 4l4.5 4.5"/><path d="M5 14v4.5A1.5 1.5 0 0 0 6.5 20h11a1.5 1.5 0 0 0 1.5-1.5V14"/></svg>
+                </div>
+                <div class="drop-copy"><strong>Drop payload files here</strong><span>Audio, image, video, PDF, or text · up to 10 files<br /><button class="file-button" type="button" id="file-picker-button" data-testid="button-file-picker">Browse from device</button></span></div>
+                <input class="sr-only" id="file-picker" type="file" multiple accept="audio/*,image/*,video/*,.pdf,.txt,.csv,.json,.zip" data-testid="input-file-picker" />
+              </div>
+              <div class="attachments" id="attachments" aria-live="polite"></div>
+
+              <section class="recorder" aria-label="Microphone recorder">
+                <div class="recorder-head"><span class="recorder-title">Live microphone</span><span class="mic-status" id="mic-status"><i class="pulse"></i><span>standby</span></span></div>
+                <div class="recorder-row" id="recorder-row">
+                  <button class="record-btn" id="record-button" type="button" aria-label="Start recording" data-testid="button-record">
+                    <svg id="record-icon" width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="12" r="7"/></svg>
+                  </button>
+                  <span class="timer" id="timer" aria-live="off">00:00</span>
+                  <span class="waveform" id="waveform" aria-hidden="true"></span>
+                  <span class="sr-only" id="recording-help">Press to start a microphone recording. Press again to stop.</span>
+                </div>
+                <div id="recording-preview"></div>
+              </section>
+
+              <div class="send-bar">
+                <span class="send-note">Payloads are sent directly to the configured Discord webhook.</span>
+                <button class="send-btn" id="send-button" type="button" data-testid="button-send">Transmit signal <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 12h15M13 6l6 6-6 6"/></svg></button>
+              </div>
+            </div>
+          </article>
+
+          <div class="side-stack">
+            <aside class="panel side-panel">
+              <div class="panel-head"><h2 class="panel-title">Signal readout</h2><span class="panel-index">B / 03</span></div>
+              <div class="readout">
+                <div class="readout-item"><span class="readout-label">Mode</span><span class="readout-value" id="mode-value">MINIMAL</span></div>
+                <div class="readout-item"><span class="readout-label">Queue</span><span class="readout-value teal" id="queue-value">0 ready</span></div>
+                <div class="readout-item"><span class="readout-label">Payload</span><span class="readout-value" id="payload-value">text</span></div>
+                <div class="readout-item"><span class="readout-label">Route</span><span class="readout-value" id="route-value">unset</span></div>
+              </div>
+              <div class="endpoint-card"><p><strong>Privacy note.</strong> Your webhook URL is held in <code>localStorage</code> only. Clear it any time by replacing the field.</p></div>
+            </aside>
+
+            <aside class="panel log-panel">
+              <div class="panel-head"><h2 class="panel-title">Transmission log</h2><span class="panel-index" id="log-count">00 events</span></div>
+              <div class="log-list" id="log-list" aria-live="polite"></div>
+              <details>
+                <summary>Network &amp; CORS troubleshooting</summary>
+                <div class="troubleshoot">
+                  <p><strong>“Failed to fetch”</strong> usually means the browser blocked the request before Discord could answer. Confirm the URL is a Discord webhook, then check browser extensions, VPN rules, and network policy.</p>
+                  <p>Discord webhook endpoints generally allow direct browser requests. If your environment strips cross-origin requests, use this console from a permitted origin or relay through infrastructure you control. No relay is included here.</p>
+                </div>
+              </details>
+            </aside>
+          </div>
+        </section>
+      </main>
+      <footer class="footer"><span>NEURO-LINK / build 1.4.2 / browser-native transport</span><span>Nothing leaves this tab except the payload you dispatch.</span></footer>
+    </div>
+    <div class="toast-region" id="toast-region" aria-live="polite" aria-atomic="true"></div>
+
+    <script src="https://unpkg.com/three@0.149.0/build/three.min.js"></script>
+    <script>
+      (() => {
+        "use strict";
+        const $ = (selector) => document.querySelector(selector);
+        const $$ = (selector) => [...document.querySelectorAll(selector)];
+        const STORAGE_KEY = "neuro-link-webhook";
+        const THEME_KEY = "neuro-link-theme";
+        const urlInput = $("#webhook-url");
+        const messageInput = $("#message");
+        const urlHint = $("#url-hint");
+        const filePicker = $("#file-picker");
+        const attachments = $("#attachments");
+        const logList = $("#log-list");
+        const files = [];
+        let mediaRecorder = null;
+        let recordingChunks = [];
+        let recordingTimer = null;
+        let recordingStartedAt = 0;
+        let recordingUrl = "";
+        let eventCount = 0;
+        let currentTheme = localStorage.getItem(THEME_KEY) || "minimal";
+
+        const icon = {
+          file: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg>',
+          audio: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M9 18V5l10-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="16" cy="16" r="3"/></svg>',
+          image: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="8.5" cy="9" r="1.5"/><path d="m21 15-5-5L5 20"/></svg>',
+          video: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="6" width="13" height="12" rx="2"/><path d="m16 10 5-3v10l-5-3z"/></svg>',
+          close: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="m6 6 12 12M18 6 6 18"/></svg>'
+        };
+
+        function applyTheme(theme) {
+          currentTheme = theme === "maximal" ? "maximal" : "minimal";
+          document.documentElement.dataset.theme = currentTheme;
+          localStorage.setItem(THEME_KEY, currentTheme);
+          $$("[data-theme-choice]").forEach((button) => button.setAttribute("aria-pressed", String(button.dataset.themeChoice === currentTheme)));
+          $("#mode-value").textContent = currentTheme.toUpperCase();
+          $("#three-canvas").style.opacity = currentTheme === "maximal" ? ".32" : ".16";
+        }
+        applyTheme(currentTheme);
+        $$("[data-theme-choice]").forEach((button) => button.addEventListener("click", () => {
+          applyTheme(button.dataset.themeChoice);
+          toast(currentTheme === "maximal" ? "Maximal field engaged" : "Minimal field engaged", "Visual language and motion profile updated.");
+        }));
+
+        const savedUrl = localStorage.getItem(STORAGE_KEY);
+        if (savedUrl) urlInput.value = savedUrl;
+        urlInput.addEventListener("input", () => {
+          localStorage.setItem(STORAGE_KEY, urlInput.value.trim());
+          updateUrlState();
+          updateReadout();
+        });
+        function isWebhookUrl(value) {
+          try {
+            const parsed = new URL(value);
+            return parsed.protocol === "https:" && /discord(?:app)?\.com$/i.test(parsed.hostname) && /\/api\/webhooks\/\d+\/[^/]+/i.test(parsed.pathname);
+          } catch (error) { return false; }
+        }
+        function updateUrlState() {
+          const value = urlInput.value.trim();
+          urlHint.className = "url-hint" + (value ? (isWebhookUrl(value) ? " valid" : " invalid") : "");
+          urlHint.innerHTML = '<span class="mini-dot"></span><span>' + (value ? (isWebhookUrl(value) ? "Webhook shape recognized. Ready to test." : "Expected a Discord webhook URL.") : "Webhook URL is stored locally in this browser.") + "</span>";
+        }
+        updateUrlState();
+
+        messageInput.addEventListener("input", () => {
+          $("#char-count").textContent = messageInput.value.length.toLocaleString() + " / 2,000";
+          updateReadout();
+        });
+        function formatBytes(bytes) {
+          if (bytes < 1024) return bytes + " B";
+          if (bytes < 1048576) return (bytes / 1024).toFixed(1) + " KB";
+          return (bytes / 1048576).toFixed(1) + " MB";
+        }
+        function fileIcon(file) {
+          if (file.type.startsWith("audio/")) return icon.audio;
+          if (file.type.startsWith("image/")) return icon.image;
+          if (file.type.startsWith("video/")) return icon.video;
+          return icon.file;
+        }
+        function filePreview(file) {
+          if (!(file.type.startsWith("audio/") || file.type.startsWith("image/") || file.type.startsWith("video/"))) return "";
+          if (!file.__previewUrl) file.__previewUrl = URL.createObjectURL(file);
+          if (file.type.startsWith("audio/")) return '<audio class="attachment-preview audio" controls src="' + file.__previewUrl + '" aria-label="Preview of ' + escapeHtml(file.name) + '"></audio>';
+          if (file.type.startsWith("image/")) return '<img class="attachment-preview" src="' + file.__previewUrl + '" alt="Preview of ' + escapeHtml(file.name) + '" />';
+          return '<video class="attachment-preview video" controls src="' + file.__previewUrl + '" aria-label="Preview of ' + escapeHtml(file.name) + '"></video>';
+        }
+        function addFiles(incoming) {
+          [...incoming].slice(0, 10 - files.length).forEach((file) => {
+            if (file.size > 25 * 1024 * 1024) { toast("File skipped", file.name + " is larger than Discord’s 25 MB limit.", "error"); return; }
+            if (!files.some((existing) => existing.name === file.name && existing.size === file.size)) files.push(file);
+          });
+          renderFiles();
+          updateReadout();
+        }
+        function renderFiles() {
+          attachments.innerHTML = files.map((file, index) => '<div class="attachment" data-file-index="' + index + '"><span class="file-kind">' + fileIcon(file) + '</span><span class="file-info"><span class="file-name">' + escapeHtml(file.name) + '</span><span class="file-size">' + formatBytes(file.size) + " · " + (file.type || "browser file") + '</span></span><button class="remove-file" type="button" data-remove-file="' + index + '" aria-label="Remove ' + escapeHtml(file.name) + '" data-testid="button-remove-file-' + index + '">' + icon.close + "</button>" + filePreview(file) + "</div>").join("");
+          $$("[data-remove-file]").forEach((button) => button.addEventListener("click", () => {
+            files.splice(Number(button.dataset.removeFile), 1);
+            renderFiles(); updateReadout();
+          }));
+        }
+        function escapeHtml(value) {
+          return value.replace(/[&<>"']/g, (character) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#039;" }[character]));
+        }
+        $("#file-picker-button").addEventListener("click", () => filePicker.click());
+        filePicker.addEventListener("change", (event) => { addFiles(event.target.files); filePicker.value = ""; });
+        const dropZone = $("#drop-zone");
+        ["dragenter", "dragover"].forEach((name) => dropZone.addEventListener(name, (event) => { event.preventDefault(); dropZone.classList.add("dragging"); }));
+        ["dragleave", "drop"].forEach((name) => dropZone.addEventListener(name, (event) => { event.preventDefault(); dropZone.classList.remove("dragging"); }));
+        dropZone.addEventListener("drop", (event) => addFiles(event.dataTransfer.files));
+
+        function updateReadout() {
+          const hasAudio = files.some((file) => file.type.startsWith("audio/"));
+          $("#queue-value").textContent = files.length + (files.length === 1 ? " ready" : " ready");
+          $("#payload-value").textContent = files.length ? (hasAudio ? "audio + text" : "file + text") : (messageInput.value.trim() ? "text" : "empty");
+          $("#route-value").textContent = urlInput.value.trim() ? (isWebhookUrl(urlInput.value.trim()) ? "defined" : "check URL") : "unset";
+        }
+        updateReadout();
+
+        for (let i = 0; i < 38; i++) {
+          const bar = document.createElement("i");
+          $("#waveform").appendChild(bar);
+        }
+        function setTimer() {
+          const seconds = Math.floor((Date.now() - recordingStartedAt) / 1000);
+          $("#timer").textContent = String(Math.floor(seconds / 60)).padStart(2, "0") + ":" + String(seconds % 60).padStart(2, "0");
+        }
+        $("#record-button").addEventListener("click", async () => {
+          if (mediaRecorder && mediaRecorder.state === "recording") { mediaRecorder.stop(); return; }
+          if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) { toast("Microphone unavailable", "This browser does not expose a microphone capture API.", "error"); return; }
+          try {
+            const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+            const preferred = MediaRecorder.isTypeSupported("audio/webm;codecs=opus") ? "audio/webm;codecs=opus" : "";
+            mediaRecorder = new MediaRecorder(stream, preferred ? { mimeType: preferred } : undefined);
+            recordingChunks = [];
+            mediaRecorder.ondataavailable = (event) => { if (event.data.size) recordingChunks.push(event.data); };
+            mediaRecorder.onstop = () => {
+              stream.getTracks().forEach((track) => track.stop());
+              clearInterval(recordingTimer);
+              const blob = new Blob(recordingChunks, { type: mediaRecorder.mimeType || "audio/webm" });
+              if (recordingUrl) URL.revokeObjectURL(recordingUrl);
+              recordingUrl = URL.createObjectURL(blob);
+              const recordedFile = new File([blob], "neuro-link-recording-" + new Date().toISOString().slice(11, 19).replace(/:/g, "") + ".webm", { type: blob.type });
+              addFiles([recordedFile]);
+              $("#recording-preview").innerHTML = '<audio controls src="' + recordingUrl + '" aria-label="Recorded microphone preview"></audio>';
+              $("#mic-status").className = "mic-status";
+              $("#mic-status").innerHTML = '<i class="pulse"></i><span>standby</span>';
+              $("#recorder-row").classList.remove("recording");
+              $("#record-button").classList.remove("recording");
+              $("#record-button").setAttribute("aria-label", "Start recording");
+              $("#record-icon").innerHTML = '<circle cx="12" cy="12" r="7"/>';
+              toast("Recording attached", "The microphone signal is ready in the payload queue.");
+              mediaRecorder = null;
+            };
+            mediaRecorder.start();
+            recordingStartedAt = Date.now();
+            setTimer();
+            recordingTimer = setInterval(setTimer, 250);
+            $("#mic-status").className = "mic-status recording";
+            $("#mic-status").innerHTML = '<i class="pulse"></i><span>recording</span>';
+            $("#recorder-row").classList.add("recording");
+            $("#record-button").classList.add("recording");
+            $("#record-button").setAttribute("aria-label", "Stop recording");
+            $("#record-icon").innerHTML = '<rect x="8" y="8" width="8" height="8" rx="1"/>';
+          } catch (error) {
+            toast("Microphone permission denied", "Allow microphone access in your browser, then try again.", "error");
+          }
+        });
+
+        function toast(title, message, type) {
+          const node = document.createElement("div");
+          node.className = "toast" + (type === "error" ? " error" : "");
+          node.innerHTML = '<span class="toast-mark"></span><div><b>' + escapeHtml(title) + '</b><p>' + escapeHtml(message) + "</p></div>";
+          $("#toast-region").appendChild(node);
+          setTimeout(() => { node.style.opacity = "0"; node.style.transform = "translateX(18px)"; setTimeout(() => node.remove(), 300); }, 4800);
+        }
+        function addLog(label, status, detail) {
+          eventCount++;
+          $("#log-count").textContent = String(eventCount).padStart(2, "0") + (eventCount === 1 ? " event" : " events");
+          const empty = $(".log-empty"); if (empty) empty.remove();
+          const item = document.createElement("div");
+          item.className = "log-entry";
+          item.innerHTML = '<span class="log-dot ' + status + '"></span><span class="log-main"><strong>' + escapeHtml(label) + '</strong><span>' + escapeHtml(detail) + "</span></span><span class=\"log-status " + status + '">' + status + "</span>";
+          logList.prepend(item);
+          return item;
+        }
+        addLog("Console initialized", "sent", "local session · " + new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }));
+
+        $("#test-endpoint").addEventListener("click", async () => {
+          const webhook = urlInput.value.trim();
+          if (!isWebhookUrl(webhook)) { toast("Endpoint needs attention", "Paste a complete Discord webhook URL before testing.", "error"); urlInput.focus(); return; }
+          const button = $("#test-endpoint");
+          button.disabled = true; button.textContent = "Testing…";
+          const entry = addLog("Endpoint check", "pending", "requesting webhook metadata");
+          try {
+            const response = await fetch(webhook, { method: "GET", mode: "cors" });
+            if (!response.ok) throw new Error("HTTP " + response.status);
+            entry.querySelector(".log-dot").className = "log-dot sent"; entry.querySelector(".log-status").className = "log-status sent"; entry.querySelector(".log-status").textContent = "sent"; entry.querySelector(".log-main span").textContent = "Discord responded · HTTP " + response.status;
+            toast("Endpoint reachable", "Discord accepted the metadata request.");
+          } catch (error) {
+            entry.querySelector(".log-dot").className = "log-dot failed"; entry.querySelector(".log-status").className = "log-status failed"; entry.querySelector(".log-status").textContent = "failed"; entry.querySelector(".log-main span").textContent = error.message || "browser blocked request";
+            toast("Endpoint test failed", "Check the URL, browser permissions, or the CORS guidance below.", "error");
+          } finally { button.disabled = false; button.textContent = "Test endpoint"; }
+        });
+
+        $("#send-button").addEventListener("click", async () => {
+          const webhook = urlInput.value.trim();
+          const content = messageInput.value.trim();
+          if (!isWebhookUrl(webhook)) { toast("No valid destination", "A complete Discord webhook URL is required to transmit.", "error"); urlInput.focus(); return; }
+          if (!content && !files.length) { toast("Payload is empty", "Write a message or add at least one file before transmitting.", "error"); messageInput.focus(); return; }
+          const button = $("#send-button");
+          button.disabled = true; button.innerHTML = "Transmitting…";
+          const detail = (files.length ? files.length + (files.length === 1 ? " attachment" : " attachments") : "text only") + " · direct browser request";
+          const entry = addLog("Signal dispatch", "pending", detail);
+          try {
+            let response;
+            if (files.length) {
+              const formData = new FormData();
+              formData.append("payload_json", JSON.stringify({ content: content || undefined }));
+              files.forEach((file, index) => formData.append(index === 0 ? "file" : "files[" + index + "]", file, file.name));
+              response = await fetch(webhook, { method: "POST", mode: "cors", body: formData });
+            } else {
+              response = await fetch(webhook, { method: "POST", mode: "cors", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ content }) });
+            }
+            if (!response.ok) throw new Error("HTTP " + response.status);
+            entry.querySelector(".log-dot").className = "log-dot sent"; entry.querySelector(".log-status").className = "log-status sent"; entry.querySelector(".log-status").textContent = "sent"; entry.querySelector(".log-main span").textContent = "Discord acknowledged · HTTP " + response.status;
+            toast("Signal transmitted", "The payload reached the Discord webhook.");
+            messageInput.value = ""; files.splice(0, files.length); renderFiles(); updateReadout(); $("#char-count").textContent = "0 / 2,000";
+          } catch (error) {
+            entry.querySelector(".log-dot").className = "log-dot failed"; entry.querySelector(".log-status").className = "log-status failed"; entry.querySelector(".log-status").textContent = "failed"; entry.querySelector(".log-main span").textContent = error.message || "browser blocked request";
+            toast("Transmission failed", "The browser could not complete the Discord request. Open troubleshooting for next steps.", "error");
+          } finally { button.disabled = false; button.innerHTML = 'Transmit signal <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 12h15M13 6l6 6-6 6"/></svg>'; }
+        });
+
+        /* A small Three.js signal field: quiet orbital points in MINIMAL, faster and denser in MAXIMAL. */
+        const canvas = $("#three-canvas");
+        let renderer, scene, camera, points, knot;
+        if (window.THREE && (canvas.getContext("webgl2") || canvas.getContext("webgl"))) {
+          try {
+            scene = new THREE.Scene();
+            camera = new THREE.PerspectiveCamera(55, window.innerWidth / window.innerHeight, .1, 100);
+            camera.position.z = 7;
+            renderer = new THREE.WebGLRenderer({ canvas, alpha: true, antialias: true });
+            renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.7));
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            const geometry = new THREE.BufferGeometry();
+            const positions = new Float32Array(900);
+            for (let i = 0; i < positions.length; i += 3) {
+              const radius = 3.5 + Math.random() * 2.5;
+              const angle = Math.random() * Math.PI * 2;
+              positions[i] = Math.cos(angle) * radius;
+              positions[i + 1] = (Math.random() - .5) * 3.7;
+              positions[i + 2] = Math.sin(angle) * radius - 3;
+            }
+            geometry.setAttribute("position", new THREE.BufferAttribute(positions, 3));
+            const material = new THREE.PointsMaterial({ color: 0x00ff88, size: .022, transparent: true, opacity: .8 });
+            points = new THREE.Points(geometry, material); scene.add(points);
+            const knotGeometry = new THREE.TorusKnotGeometry(1.2, .018, 140, 5, 2, 3);
+            const knotMaterial = new THREE.MeshBasicMaterial({ color: 0xff00ff, wireframe: true, transparent: true, opacity: .16 });
+            knot = new THREE.Mesh(knotGeometry, knotMaterial); knot.position.set(3.7, -1.6, -3.8); knot.scale.setScalar(.8); scene.add(knot);
+            const clock = new THREE.Clock();
+            function animate() {
+              const elapsed = clock.getElapsedTime();
+              const multiplier = currentTheme === "maximal" ? 1 : .28;
+              points.rotation.y = elapsed * .018 * multiplier;
+              points.rotation.x = Math.sin(elapsed * .07) * .06;
+              knot.rotation.x = elapsed * .08 * multiplier; knot.rotation.y = elapsed * .12 * multiplier;
+              renderer.render(scene, camera); requestAnimationFrame(animate);
+            }
+            animate();
+            window.addEventListener("resize", () => { camera.aspect = window.innerWidth / window.innerHeight; camera.updateProjectionMatrix(); renderer.setSize(window.innerWidth, window.innerHeight); });
+          } catch (error) {
+            canvas.hidden = true;
+          }
+        }
+      })();
+    </script>
+  </body>
+</html>
